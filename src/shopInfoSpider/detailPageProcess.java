@@ -42,7 +42,7 @@ public class detailPageProcess implements PageProcessor {
 
 	@Override
 	public Site getSite() {
-		// TODO Auto-generated method stub
+		System.out.println(site);
 		return site;
 	}
 
@@ -134,6 +134,15 @@ public class detailPageProcess implements PageProcessor {
 		case TYPE_JSON: {
 			//商家信息接口
 			String shopId = (String) request.getExtra("shopId");
+			//如果成功访问，从list中删除，保证完全访问到
+			int size = DazongPageProcessor.doList.size();
+			System.out.println(size);
+			for(int i=0;i < size;i++){
+				if(shopId.equals(DazongPageProcessor.doList.get(i))){
+					DazongPageProcessor.doList.remove(i);
+					break;
+				}
+			}
 			String shopFlag = (String) request.getExtra("shopFlag");
 			String shopNum = (String) request.getExtra("shopNum");
 			String province = "";
@@ -201,20 +210,22 @@ public class detailPageProcess implements PageProcessor {
 			StringBuffer sql = new StringBuffer("INSERT ignore INTO ");
 			switch (type2) {
 			case TYPE_FOOD:
-				sql.append("`dazongdianping`.`dazhongdianping_shopinfo_single_food_20160507`");
+				sql.append("`dazongdianping`.`dazhongdianping_shopinfo_single_food_");
 				break;
 			case TYPE_MOVIE:
-				sql.append("`dazongdianping`.`dazhongdianping_shopinfo_single_movie_20160507`");
+				sql.append("`dazongdianping`.`dazhongdianping_shopinfo_single_movie_");
 				break;
 			case TYPE_HOTEL:
-				sql.append("`dazongdianping`.`dazhongdianping_shopinfo_single_hotel_20160507`");
+				sql.append("`dazongdianping`.`dazhongdianping_shopinfo_single_hotel_");
 				break;
 			case TYPE_KTV:
-				sql.append("`dazongdianping`.`dazhongdianping_shopinfo_single_ktv_20160507`");
+				sql.append("`dazongdianping`.`dazhongdianping_shopinfo_single_ktv_");
 				break;
 			default:
 				break;
 			}
+			sql.append(DazongPageProcessor.tableTime);
+			sql.append("`");
 			sql.append("(`shopId`,`shopName`,`branchName`,`tagInfo`,`address`,`phoneNo`,`phoneNo2`,`cityId`,"
 					+ "`cityNameCh`,`cityNameEn`,"
 					+ "`hits`,`todayHits`,`weeklyHits`,`prevWeeklyHits`,"

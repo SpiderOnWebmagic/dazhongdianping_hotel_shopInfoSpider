@@ -3,6 +3,7 @@ package shopInfoSpider;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -21,8 +22,9 @@ public class DazongPageProcessor implements PageProcessor {
 
 	public static String shopIdFirst_food;
 	public static String shopIdFirst_ktv;
-
+	public static String tableTime = "";
 	public static DbPoolConnection dbp;
+	public static List<String> doList;
 
 	public static final int TYPE_KTV = 1;
 	public static final int TYPE_FOOD = 2;
@@ -64,6 +66,7 @@ public class DazongPageProcessor implements PageProcessor {
 
 	@Override
 	public Site getSite() {
+		System.out.println(site);
 		return site;
 	}
 
@@ -103,29 +106,10 @@ public class DazongPageProcessor implements PageProcessor {
 					requestTo.putExtra("cityId", cityId);
 					page.addTargetRequest(requestTo);
 				}
-				// find shopinfo
-				detailPageProcess detailPageProcess = new detailPageProcess();
-				if (nowCookie >= cookieNum) {
-					nowCookie %= cookieNum;
-				}
-				String cookie = (String) cookies.get(nowCookie).get("key");
-				nowCookie++;
-				detailPageProcess.setSite(detailPageProcess.getSite()
-						.addCookie("_hc.v", cookie));
-				Spider tems = Spider.create(detailPageProcess).addPipeline(
-						new sqlPipeline());
+				// find shopinfo 加到列表中，等待够造spider进行抓取
 				for (String shopId : shopIds) {
-					Request shopInfoRequest2 = new Request();
-					shopInfoRequest2.setUrl(shopId);
-					shopId = shopId.substring(29, shopId.length());
-					shopInfoRequest2.putExtra("type", TYPE_SHOP);
-					shopInfoRequest2.putExtra("type2", TYPE_HOTEL);
-					shopInfoRequest2.putExtra("shopId", shopId);
-					tems.addRequest(shopInfoRequest2);
+					doList.add(shopId.substring(29, shopId.length()));
 				}
-				tems.thread(5).run();
-				tems.close();
-				tems = null;
 				shopIds = null;
 			}
 			break;
@@ -139,11 +123,14 @@ public class DazongPageProcessor implements PageProcessor {
 	}
 
 	public static void main(String[] args) throws SQLException {
+		doList = new ArrayList<String>();
+		// 当前表时间
+		tableTime = "20160517";
 		Site temsite = Site
 				.me()
 				.setRetryTimes(5)
 				.setCycleRetryTimes(3)
-				.setSleepTime(100)
+				.setSleepTime(2000)
 				.setTimeOut(5000)
 				.setDomain(".dianping.com")
 				.setUserAgent(
@@ -153,7 +140,7 @@ public class DazongPageProcessor implements PageProcessor {
 		unixTime = String.valueOf(System.currentTimeMillis());
 		NOWDATE = GetNowDate();
 		// 查询所有cookie
-		cookies = JdbcUtils.findModeResult("select `key` from cookies3", null,
+		cookies = JdbcUtils.findModeResult("select `key` from cookies2", null,
 				dbp.getConnection());
 		cookieNum = cookies.size();
 		cityIds = JdbcUtils
@@ -165,7 +152,7 @@ public class DazongPageProcessor implements PageProcessor {
 		DazongPageProcessor temPageProcessor = new DazongPageProcessor();
 		sqlPipeline sqlPipeline = new sqlPipeline();
 		for (int i = 0; i < citySize; i++) {
-
+			nowCookie++;
 			// cookie 循环使用
 			if (nowCookie >= cookieNum) {
 				nowCookie %= cookieNum;
@@ -173,9 +160,7 @@ public class DazongPageProcessor implements PageProcessor {
 			String cookie = (String) cookies.get(nowCookie).get("key");
 			temPageProcessor.setSite(temsite.addCookie("_hc.v", cookie));
 			String cityId = (String) cityIds.get(i).get("cityId");
-
 			String cityNameEn = (String) cityIds.get(i).get("cityNameEn");
-
 			// hotel 对于每个城市 request构建 ，从hotel首页进入
 			Request request = new Request("http://www.dianping.com/"
 					+ cityNameEn + "/hotel/p1");
@@ -183,8 +168,6 @@ public class DazongPageProcessor implements PageProcessor {
 			request.putExtra("type", TYPE_HOTEL);
 			request.putExtra("type2", 0);
 			request.putExtra("cityId", cityNameEn);
-
-			nowCookie++;
 			Spider newSpider = Spider.create(temPageProcessor).addPipeline(
 					sqlPipeline);
 			newSpider.addRequest(request).thread(3).run();
@@ -192,6 +175,45 @@ public class DazongPageProcessor implements PageProcessor {
 			newSpider = null;
 			request = null;
 			cookie = null;
+			Spider temSpider = Spider.create(temPageProcessor)
+					.addPipeline(sqlPipeline);
+			detailPageProcess detailPageProcess = new detailPageProcess();
+			//将列表页获取到的id进行爬取，并且为了保证爬取的成功率，采用多次爬取
+			int cnt = 0;
+			while (doList.size() > 0) {
+				cnt ++;
+				if(cnt > 1000)//防止死循环
+					break;
+				int size = doList.size();
+				//每次只爬取10个ID防止403
+				if(size >= 10){
+					size = 10;
+				}
+				nowCookie++;
+				// cookie 循环使用
+				if (nowCookie >= cookieNum) {
+					nowCookie %= cookieNum;
+				}
+				cookie = (String) cookies.get(nowCookie).get("key");
+				detailPageProcess.setSite(temsite.addCookie("_hc.v",
+						cookie));
+				temSpider = Spider.create(detailPageProcess)
+								.addPipeline(sqlPipeline);
+				//对这10个id构造spider
+				for(int j=0;j < size;j++){
+					String shopId = doList.get(j);
+					Request shopInfoRequest2 = new Request();
+					shopInfoRequest2.setUrl(URLBASE_SHOP + shopId);
+					shopInfoRequest2.putExtra("type", TYPE_SHOP);
+					shopInfoRequest2.putExtra("type2", TYPE_HOTEL);
+					shopInfoRequest2.putExtra("shopId", shopId);
+					temSpider.addRequest(shopInfoRequest2);
+				}
+				temSpider.thread(5).run();
+				temSpider.close();
+				temSpider = null;
+			}
+			doList.clear();
 		}
 		dbp = null;
 		System.out.println("done.");
